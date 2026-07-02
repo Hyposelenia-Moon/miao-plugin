@@ -1,11 +1,12 @@
 import { profileHelp } from './profile/ProfileCommon.js'
-import { profileArtisList } from './profile/ProfileArtis.js'
+import { profileArtisList, unifiedArtisHandler } from './profile/ProfileArtis.js'
 import ProfileDetail from './profile/ProfileDetail.js'
 import ProfileStat from './profile/ProfileStat.js'
 import ProfileList from './profile/ProfileList.js'
 import { uploadCharacterImg, delProfileImg, profileImgList } from './character/ImgUpload.js'
 import { enemyLv } from './profile/ProfileUtils.js'
 import { groupRank, resetRank, refreshRank, manageRank } from './profile/ProfileRank.js'
+import { profileMaxScoreBuild } from './profile/ProfileMax.js'
 import { App, Cfg } from '#miao'
 
 let app = App.init({
@@ -21,6 +22,12 @@ app.reg({
     rule: /^#(星铁|原神)?(面板角色|角色面板|面板)(列表)?\s*(\d{9,10})?$/
   },
 
+  profileMax: {
+    name: '最高分/最强面板',
+    fn: ProfileDetail.detail,
+    rule: /^#(?:星铁|原神)?我的(.+?)(?:最高分|最强)面板(\d*)\s*(.*)$/
+  },
+
   profileDetail: {
     name: '角色面板',
     fn: ProfileDetail.detail,
@@ -30,7 +37,7 @@ app.reg({
   profileChange: {
     name: '角色面板计算',
     fn: ProfileDetail.detail,
-    rule: /^#.+换.+$/
+    rule: /^#.+[换补]/
   },
 
   groupProfile: {
@@ -64,9 +71,9 @@ app.reg({
   },
 
   artisList: {
-    name: '面板圣遗物列表',
-    fn: profileArtisList,
-    rule: /^#(星铁|原神)?(圣遗物|遗器)列表\s*(\d{9,10})?$/
+    name: '圣遗物列表/统计',
+    fn: unifiedArtisHandler,
+    rule: /^#(星铁|原神)?(.*?)(圣遗物|遗器)(全局)?(列表|统计)\s*(.*)$/
   },
 
   profileStat: {
