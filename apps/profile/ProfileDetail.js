@@ -5,6 +5,7 @@ import { Cfg, Common, Data, Format } from '#miao'
 import { Button, MysApi, ProfileRank, Character, Weapon, Artifact } from '#miao.models'
 
 import ProfileChange from './ProfileChange.js'
+import { profileMaxScoreBuild, profileMaxDmgBuild } from './ProfileMax.js'
 import { profileArtis } from './ProfileArtis.js'
 import { ProfileWeapon } from './ProfileWeapon.js'
 
@@ -17,15 +18,48 @@ let ProfileDetail = {
     if (!msg) {
       return false
     }
-    if (!/详细|详情|面板|面版|圣遗物|遗器|伤害|武器|换/.test(msg)) {
+    if (!/详细|详情|面板|面版|圣遗物|遗器|伤害|武器|换|补/.test(msg)) {
       return false
     }
+
+    // 最高分/最强面板：早期分流
+    let maxRet = /^#(?:星铁|原神)?我的(.+?)(最高分|最强)面板(\d*)\s*(.*)$/.exec(msg)
+    if (maxRet) {
+      let game = /星铁/.test(msg) ? 'sr' : 'gs'
+      e.game = game
+      e.isSr = game === 'sr'
+      let charInput = maxRet[1].trim()
+      let mode = maxRet[2]
+      let routeDmgIdx = maxRet[3] ? Number(maxRet[3]) : 0
+      let paramStr = (maxRet[4] || '').trim()
+      let char = Character.get(charInput, game)
+      if (!char) return false
+      let uid = await getTargetUid(e)
+      if (!uid) return true
+      e.uid = uid
+      e.avatar = char.id
+      let result = mode === '最强'
+        ? await profileMaxDmgBuild(e, char, paramStr, game, uid, routeDmgIdx)
+        : await profileMaxScoreBuild(e, char, paramStr, game, uid)
+      if (!result) return true
+      await e.reply(result.summary)
+      e._profile = result.profile
+      e._profileMsg = `#${char.name}${mode}面板`
+      return ProfileDetail.render(e, char, 'profile', {
+        dmgIdx: routeDmgIdx,
+        idxIsInput: mode === '最强' && routeDmgIdx > 0
+      })
+    }
+
     let mode = 'profile'
     let profileChange = false
     let changeMsg = msg
     let pc = ProfileChange.matchMsg(msg)
 
-    if (pc && pc.char && pc.change) {
+    // OCR 图片识别
+    await ProfileChange.applyOCR(pc, e)
+
+    if (pc && pc.char && (pc.change || pc.baseChange)) {
       if (!Cfg.get('profileChange')) {
         e.reply('面板替换功能已禁用...')
         return true
@@ -35,11 +69,27 @@ let ProfileDetail = {
       e.uid = ''
       e.msg = '#喵喵面板变换'
       e.uid = pc.uid || await getTargetUid(e)
-      profileChange = ProfileChange.getProfile(e.uid, pc.char, pc.change, pc.game)
+      // 换覆盖补，构建合并后的变更描述
+      let mergedDs = pc.change || false
+      if (pc.baseChange) {
+        e._baseChange = pc.baseChange
+        let ch = pc.change || {}
+        mergedDs = lodash.merge({}, pc.baseChange, ch)
+        // statMods 数组追加（补层和换层的属性变换均生效）
+        if (pc.baseChange.statMods || ch.statMods) {
+          mergedDs.statMods = [
+            ...(pc.baseChange.statMods || []),
+            ...(ch.statMods || [])
+          ]
+        }
+      }
+      profileChange = ProfileChange.getProfile(e.uid, pc.char, mergedDs, pc.game)
       if (profileChange && profileChange.char) {
         msg = `#${profileChange.char?.name}${pc.mode || '面板'}`
         e._profile = profileChange
         e._profileMsg = changeMsg
+        e._change = mergedDs
+        e._changeOp = pc.op
       }
     }
     let uidRet = /(18|[1-9])[0-9]{8}/g.exec(msg)
@@ -180,7 +230,10 @@ let ProfileDetail = {
     }
 
     let enemyLv = isGs ? (await selfUser.getCfg('char.enemyLv', 103)) : 80
-    let dmgCalc = await ProfileDetail.getProfileDmgCalc({ profile, enemyLv, mode, params })
+    let dmgCalc = await ProfileDetail._getDmgCalcWithDiff(e, profile, char.id, game, enemyLv, mode, params)
+    if (!dmgCalc) {
+      dmgCalc = await ProfileDetail.getProfileDmgCalc({ profile, enemyLv, mode, params })
+    }
 
     let rank = false
     if (e.group_id && !e._profile) {
@@ -313,6 +366,72 @@ let ProfileDetail = {
     }
 
     return dmgCalc
+  },
+
+  /**
+   * 面板变换伤害差异注入
+   * 在 e._profile 存在时，计算变换前后的伤害差异并注入到 dmgData
+   * @param {Object}   e        - 事件对象（含 e._profile / e._baseChange）
+   * @param {Object}   profile  - 变换后面板
+   * @param {string}   charId   - 角色 ID
+   * @param {string}   game     - 'gs' | 'sr'
+   * @param {number}   enemyLv  - 敌人等级
+   * @param {string}   mode     - 伤害模式
+   * @param {Object}   params   - 附加参数（dmgIdx 等）
+   * @returns {Object|null} 含 avg_diff/dmg_diff 的 dmgCalc，无变换或出错返回 null
+   */
+  async _getDmgCalcWithDiff (e, profile, charId, game, enemyLv, mode, params) {
+    if (!e._profile) return null
+    try {
+      let oldProfile = await getProfileRefresh(e, charId)
+      if (!oldProfile) return null
+
+      // 补层存在：用 baseChange 重建旧面板做 diff 基线
+      if (e._baseChange) {
+        let rebuilt = ProfileChange.getProfile(e.uid, charId, e._baseChange, game)
+        if (rebuilt) oldProfile = rebuilt
+      }
+
+      const oldCalc = await ProfileDetail.getProfileDmgCalc({ profile: oldProfile, enemyLv, mode, params })
+      const newCalc = await ProfileDetail.getProfileDmgCalc({ profile, enemyLv, mode, params })
+
+      ProfileDetail._injectDiffLines(newCalc?.dmgData, oldCalc?.dmgData)
+      return newCalc
+    } catch (err) {
+      logger?.error('[miao-plugin] 面板变换伤害差异计算失败:', err)
+      return null
+    }
+  },
+
+  /**
+   * 逐行计算差异并注入到 newData（原地修改）
+   */
+  _injectDiffLines (newData, oldData) {
+    if (!newData || !oldData) return
+    for (let i = 0; i < newData.length; i++) {
+      const ni = newData[i], oi = oldData[i]
+      if (!oi || ni.type === 'text' || oi.type === 'text') continue
+
+      const avgDiff = ProfileDetail._calcPctDiff(ni.avg, oi.avg)
+      if (avgDiff) ni.avg_diff = avgDiff
+
+      if (ni.dmg && ni.dmg !== 'NaN' && oi.dmg && oi.dmg !== 'NaN') {
+        const dmgDiff = ProfileDetail._calcPctDiff(ni.dmg, oi.dmg)
+        if (dmgDiff) ni.dmg_diff = dmgDiff
+      }
+    }
+  },
+
+  /**
+   * 计算百分比差异字符串
+   * @returns {string|null} "↑3.5%" / "↓1.2%" / null
+   */
+  _calcPctDiff (newVal, oldVal) {
+    const n = parseFloat(String(newVal).replace(/,/g, ''))
+    const o = parseFloat(String(oldVal).replace(/,/g, ''))
+    if (isNaN(n) || isNaN(o) || o === 0) return null
+    const pct = ((n - o) / o * 100)
+    return `${pct > 0 ? '↑' : '↓'}${Math.abs(pct).toFixed(1)}%`
   }
 }
 

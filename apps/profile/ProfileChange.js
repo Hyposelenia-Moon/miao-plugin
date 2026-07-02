@@ -5,6 +5,71 @@ import lodash from 'lodash'
 import { Data, Meta } from '#miao'
 import { Character, ArtifactSet, Avatar, Weapon, Player } from '#miao.models'
 
+/** 中文属性名 → 内部 key 映射，最长前缀匹配 */
+export const ATTR_CN_TO_KEY = {
+  '暴击': 'cpct', '暴击率': 'cpct',
+  '爆伤': 'cdmg', '暴伤': 'cdmg', '暴击伤害': 'cdmg',
+  '攻击': 'atk', '大攻击': 'atk', '攻击力': 'atk', '攻击力%': 'atk', '攻击力百分比': 'atk', '百分比攻击力': 'atk',
+  '生命': 'hp', '大生命': 'hp', '生命值': 'hp', '生命值%': 'hp', '生命值百分比': 'hp', '百分比生命值': 'hp',
+  '防御': 'def', '大防御': 'def', '防御力': 'def', '防御力%': 'def', '防御力百分比': 'def', '百分比防御力': 'def',
+  '精通': 'mastery', '元素精通': 'mastery',
+  '充能': 'recharge', '充能效率': 'recharge', '元素充能': 'recharge', '元素充能效率': 'recharge',
+  '治疗': 'heal', '治疗加成': 'heal',
+  '物伤': 'phy', '物理': 'phy', '物理伤害': 'phy', '物理伤害加成': 'phy',
+  '冰伤': 'dmg', '冰元素': 'dmg', '冰元素伤害': 'dmg', '冰元素伤害加成': 'dmg',
+  '火伤': 'dmg', '火元素': 'dmg', '火元素伤害': 'dmg', '火元素伤害加成': 'dmg',
+  '雷伤': 'dmg', '雷元素': 'dmg', '雷元素伤害': 'dmg', '雷元素伤害加成': 'dmg',
+  '水伤': 'dmg', '水元素': 'dmg', '水元素伤害': 'dmg', '水元素伤害加成': 'dmg',
+  '风伤': 'dmg', '风元素': 'dmg', '风元素伤害': 'dmg', '风元素伤害加成': 'dmg',
+  '岩伤': 'dmg', '岩元素': 'dmg', '岩元素伤害': 'dmg', '岩元素伤害加成': 'dmg',
+  '草伤': 'dmg', '草元素': 'dmg', '草元素伤害': 'dmg', '草元素伤害加成': 'dmg',
+  '元素伤害': 'dmg', '元素伤害加成': 'dmg'
+}
+
+/** 中文属性名 → 内部 key，最长前缀匹配 */
+function attrNameToKey (chinese) {
+  chinese = chinese.trim()
+  let keys = Object.keys(ATTR_CN_TO_KEY).sort((a, b) => b.length - a.length)
+  for (let cn of keys) {
+    if (chinese.includes(cn)) return ATTR_CN_TO_KEY[cn]
+  }
+  return null
+}
+
+/**
+ * 解析面板变换 token
+ * "+15%暴击" → {op:'+', key:'cpct', value:15, isPct:true}
+ * "+10大攻击" → {op:'+', key:'atk', value:10, isPct:true}
+ * "+10攻击"   → {op:'+', key:'atk', value:10, isPct:false}
+ * "-100防御"  → {op:'-', key:'def', value:100, isPct:false}
+ */
+export function parseStatTransform (token) {
+  let m = /^([+\-])(\d+)(%?)(.+)$/.exec(token)
+  if (!m) return null
+  let key = attrNameToKey(m[4])
+  if (!key) return null
+  let isPct = m[3] === '%' || /[大百分比]/.test(m[4]) || /%$/.test(m[4])
+  return { op: m[1], key, value: parseFloat(m[2]), isPct }
+}
+
+/**
+ * 对 Avatar 应用面板变换（calcAttr 之后调用）
+ * isPct 仅对 atk/hp/def 三类基于 base 值计算
+ */
+export function applyStatMods (avatar, statMods) {
+  if (!avatar || !avatar.attr || !statMods || !statMods.length) return
+  let base = avatar.base || {}
+  for (let st of statMods) {
+    let current = avatar.attr[st.key]
+    if (current === undefined) continue
+    let addVal = st.value
+    if (st.isPct && ['atk', 'hp', 'def'].includes(st.key) && base[st.key]) {
+      addVal = base[st.key] * st.value / 100
+    }
+    avatar.attr[st.key] = st.op === '+' ? current + addVal : current - addVal
+  }
+}
+
 // 默认武器
 let defWeapon = {
   bow: '西风猎弓',
@@ -21,17 +86,18 @@ const ProfileChange = {
    * @returns {{}}
    */
   matchMsg (msg) {
-    if (!/(变|改|换)/.test(msg)) {
+    if (!/(变|改|换|补)/.test(msg)) {
       return false
     }
     let game = /星铁/.test(msg) ? 'sr' : 'gs'
     msg = msg.toLowerCase().replace(/uid ?:? ?/, '').replace('星铁', '')
-    let regRet = /^#*(\d{9,10})?(.+?)(详细|详情|面板|面版|圣遗物|伤害[1-7]?)?\s*(\d{9,10})?[变换改](.+)/.exec(msg)
+    let regRet = /^#*(\d{9,10})?(.+?)(详细|详情|面板|面版|圣遗物|伤害[1-7]?)?\s*(\d{9,10})?([变换改补])(.*)/.exec(msg)
     if (!regRet || !regRet[2]) {
       return false
     }
     let ret = {}
     let change = {}
+    let baseChange = {}
     let char = Character.get(lodash.trim(regRet[2]).replace(/\d{9,10}/g, ''), game)
     if (char.isTraveler) this.isTraveler = true
     game = char.isSr ? 'sr' : 'gs'
@@ -71,15 +137,44 @@ const ProfileChange = {
     ret.mode = regRet[3] === '换' ? '面板' : regRet[3]
     ret.uid = regRet[1] || regRet[4] || ''
     ret.game = game
-    msg = regRet[5]
+    ret.op = regRet[5]
+    msg = regRet[6]
 
     // 更换匹配
+    msg = msg.replace(/补/g, '换补')
     msg = msg.replace(/[变改]/g, '换')
+    let fragmentIdx = -1
     lodash.forEach(msg.split('换'), (txt) => {
+      fragmentIdx++
       txt = lodash.trim(txt)
       if (!txt) {
         return true
       }
+
+      // 确定归属：补 → baseChange，换 → change
+      let isBase
+      if (/^补/.test(txt)) {
+        isBase = true
+        txt = txt.replace(/^补/, '')
+      } else if (fragmentIdx === 0) {
+        isBase = (ret.op === '补')
+      } else {
+        isBase = false
+      }
+      let target = isBase ? baseChange : change
+      let char = target.char || {}
+
+      // 匹配 +/- 属性变换
+      if (/^[+\-]/.test(txt)) {
+        let sm = parseStatTransform(txt)
+        if (sm) {
+          sm.isBase = isBase
+          if (!target.statMods) target.statMods = []
+          target.statMods.push(sm)
+        }
+        return true
+      }
+
       // 匹配圣遗物
       let keyRet = keyReg.exec(txt)
       if (keyRet && keyRet[4]) {
@@ -88,7 +183,7 @@ const ProfileChange = {
           lodash.forEach(keyRet[4].split('+'), (key) => {
             key = lodash.trim(key)
             let type = keyTitleMap[key]
-            change[type] = {
+            target[type] = {
               char: char.id || '',
               uid: keyRet[1] || keyRet[3] || '',
               type
@@ -110,17 +205,17 @@ const ProfileChange = {
       }
       if (asRet && asRet[1] && getSet(1)) {
         if (game === 'gs') {
-          change.artisSet = [getSet(1), getSet(2) || getSet(1)]
+          target.artisSet = [getSet(1), getSet(2) || getSet(1)]
         } else if (game === 'sr') {
           for (let idx = 1; idx <= 3; idx++) {
             let as = ArtifactSet.get(asRet[idx])
             if (as) { // 球&绳
-              change.artisSet = change.artisSet || []
-              let ca = change.artisSet
+              target.artisSet = target.artisSet || []
+              let ca = target.artisSet
               ca[as.idxs?.[1] ? (ca[0] ? 1 : 0) : 2] = as.name
             }
           }
-          let ca = change.artisSet
+          let ca = target.artisSet
           if (ca && ca[0] && !ca[1]) {
             ca[1] = ca[0]
           }
@@ -146,12 +241,12 @@ const ProfileChange = {
             level: wRet[1] * 1 || wRet[6] * 1 || ''
           }
           if (lodash.values(tmp).join('')) {
-            change.weapon = tmp
+            target.weapon = tmp
           }
           return true
         }
       }
-      let char = change.char || {}
+
       // 命座匹配
       let consRet = /([0-6零一二三四五六满])(命|魂|星魂)/.exec(txt)
       if (consRet && consRet[1]) {
@@ -194,10 +289,11 @@ const ProfileChange = {
         }
       }
       if (!lodash.isEmpty(char)) {
-        change.char = char
+        target.char = char
       }
     })
     ret.change = lodash.isEmpty(change) ? false : change
+    ret.baseChange = lodash.isEmpty(baseChange) ? false : baseChange
     return ret
   },
 
@@ -295,9 +391,16 @@ const ProfileChange = {
     let artis = getSource(ds.artis)?.artis?.toJSON() || {}
     for (let idx = 1; idx <= (isGs ? 5 : 6); idx++) {
       if (ds['arti' + idx]) {
-        let source = getSource(ds['arti' + idx])
-        if (source && source.artis && source.artis[idx]) {
-          artis[idx] = lodash.cloneDeep(source.artis[idx])
+        if (ds['arti' + idx].mode === 'ocr') {
+          // OCR 识别结果：直接使用，不查 source
+          let ocrData = lodash.cloneDeep(ds['arti' + idx])
+          delete ocrData.mode
+          artis[idx] = ocrData
+        } else {
+          let source = getSource(ds['arti' + idx])
+          if (source && source.artis && source.artis[idx]) {
+            artis[idx] = lodash.cloneDeep(source.artis[idx])
+          }
         }
       }
       let artisIdx = (isGs ? '00111' : '001122')[idx - 1]
@@ -312,7 +415,88 @@ const ProfileChange = {
     }
     ret.setArtis(artis)
     ret.calcAttr()
+    // 应用面板变换（+/-属性）
+    if (ds.statMods && ds.statMods.length) {
+      applyStatMods(ret, ds.statMods)
+    }
     return ret
+  },
+
+  /**
+   * OCR 图片识别
+   * 识别用户发送的圣遗物/遗器截图，自动解析属性并应用到面板
+   * OCR API 参考 NotIvny 的 yunzai-artis-ocr-js 项目（https://github.com/NotIvny/yunzai-artis-ocr-js）
+   * 由 ProfileDetail 在 matchMsg 之后、change 块之前调用
+   * @param pc matchMsg 返回结果（会直接修改 pc.change）
+   * @param e 事件对象
+   */
+  async applyOCR (pc, e) {
+    if (!pc || !pc.char) return
+
+    // 1. 提取图片 URL
+    let imgUrls = []
+    if (e.getReply) {
+      let source = await e.getReply()
+      if (source && source.message) {
+        source.message.forEach(item => {
+          if (item.type === 'image') imgUrls.push(item.url)
+        })
+      }
+    } else if (e.source) {
+      let source
+      if (e.group?.getChatHistory) {
+        source = (await e.group.getChatHistory(e.source?.seq, 1)).pop()
+      } else if (e.friend?.getChatHistory) {
+        source = (await e.friend.getChatHistory((e.source?.time + 1), 1)).pop()
+      }
+      if (source && source.message) {
+        source.message.forEach(item => {
+          if (item.type === 'image') imgUrls.push(item.url)
+        })
+      }
+    }
+    if (e.message) {
+      e.message.forEach(item => {
+        if (item.type === 'image') imgUrls.push(item.url)
+      })
+    }
+    if (!imgUrls.length) return
+
+    // 2. 并行调 OCR API
+    let game = pc.game || (e.isSr ? 'sr' : 'gs')
+    const results = await Promise.all(imgUrls.map(async (imageUrl) => {
+      try {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 15000)
+        const response = await fetch(`https://ark.ivny.top/ocr/profilechange/${game}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: imageUrl }),
+          signal: controller.signal
+        })
+        clearTimeout(timeout)
+        if (!response.ok) return null
+        return await response.json()
+      } catch (err) {
+        return null
+      }
+    }))
+
+    // 3. 合并 OCR 结果到 pc.change（显式标记 mode: 'ocr'）
+    for (const res of results) {
+      if (res && res.data) {
+        if (!pc.change || pc.change === false) pc.change = {}
+        if (Array.isArray(res.data)) {
+          res.data.forEach(item => {
+            if (item && item.type) {
+              pc.change[item.type] = { ...item.data, mode: 'ocr' }
+            }
+          })
+        } else {
+          pc.change[res.data.type] = { ...res.data.data, mode: 'ocr' }
+        }
+      }
+    }
   }
 }
 export default ProfileChange
