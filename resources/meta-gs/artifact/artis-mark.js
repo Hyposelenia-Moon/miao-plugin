@@ -12,7 +12,11 @@ export const usefulAttr = {
   云堇: { hp: 0, atk: 75, def: 100, cpct: 80, cdmg: 80, mastery: 0, dmg: 80, phy: 0, recharge: 80, heal: 0 },
   荒泷一斗: { hp: 0, atk: 50, def: 100, cpct: 100, cdmg: 100, mastery: 0, dmg: 100, phy: 0, recharge: 30, heal: 0 },
   五郎: { hp: 0, atk: 0, def: 50, cpct: 0, cdmg: 0, dmg: 0, mastery: 0, phy: 0, recharge: 100, heal: 0 },
+<<<<<<< Updated upstream
   班尼特: { hp: 100, atk: 50, cpct: 0, cdmg: 0, dmg: 0, mastery: 0, phy: 0, recharge: 100, heal: 100 },
+=======
+  班尼特: { hp: 100, atk: 50, def: 0, cpct: 0, cdmg: 0, dmg: 0, mastery: 0, phy: 0, recharge: 100, heal: 100 },
+>>>>>>> Stashed changes
   枫原万叶: { hp: 0, atk: 0, def: 0, cpct: 0, cdmg: 0, mastery: 100, dmg: 80, phy: 0, recharge: 75, heal: 0 },
   行秋: { hp: 0, atk: 75, def: 0, cpct: 100, cdmg: 100, mastery: 0, dmg: 100, phy: 0, recharge: 75, heal: 0 },
   钟离: { hp: 100, atk: 30, def: 0, cpct: 40, cdmg: 40, mastery: 0, dmg: 80, phy: 0, recharge: 55, heal: 0 },
@@ -23,7 +27,11 @@ export const usefulAttr = {
   珊瑚宫心海: { hp: 100, atk: 50, def: 0, cpct: 0, cdmg: 0, mastery: 75, dmg: 100, phy: 0, recharge: 55, heal: 100 },
   莫娜: { hp: 0, atk: 75, def: 0, cpct: 100, cdmg: 100, mastery: 75, dmg: 100, phy: 0, recharge: 75, heal: 0 },
   阿贝多: { hp: 0, atk: 0, def: 75, cpct: 100, cdmg: 100, mastery: 0, dmg: 100, phy: 0, recharge: 0, heal: 0 },
+<<<<<<< Updated upstream
   迪奥娜: { hp: 100, atk: 50, cpct: 0, cdmg: 0, dmg: 0, mastery: 0, phy: 0, recharge: 90, heal: 100 },
+=======
+  迪奥娜: { hp: 100, atk: 50, def: 0, cpct: 0, cdmg: 0, dmg: 0, mastery: 0, phy: 0, recharge: 90, heal: 100 },
+>>>>>>> Stashed changes
   优菈: { hp: 0, atk: 75, def: 0, cpct: 100, cdmg: 100, mastery: 0, dmg: 40, phy: 100, recharge: 55, heal: 0 },
   达达利亚: { hp: 0, atk: 75, def: 0, cpct: 100, cdmg: 100, mastery: 75, dmg: 100, phy: 0, recharge: 30, heal: 0 },
   魈: { hp: 0, atk: 75, def: 0, cpct: 100, cdmg: 100, mastery: 0, dmg: 100, phy: 0, recharge: 55, heal: 0 },
@@ -61,7 +69,11 @@ export const usefulAttr = {
   妮露: { hp: 100, atk: 0, def: 0, cpct: 30, cdmg: 30, mastery: 80, dmg: 80, phy: 0, recharge: 30, heal: 0 },
   纳西妲: { hp: 0, atk: 55, def: 0, cpct: 100, cdmg: 100, mastery: 100, dmg: 100, phy: 0, recharge: 55, heal: 0 },
   多莉: { hp: 100, atk: 50, def: 0, cpct: 50, cdmg: 50, mastery: 0, dmg: 80, phy: 0, recharge: 75, heal: 100 },
+<<<<<<< Updated upstream
   莱依拉: { hp: 100, atk: 0, def: 0, cpct: 0, cdmg: 0, dmg: 0, mastery: 0, phy: 0, recharge: 35, heal: 0 },
+=======
+  莱依拉: { hp: 100, atk: 0, def: 0, cpct: 0, cdmg: 0, dmg: 0, mastery: 0, phy: 0, recharge: 35 },
+>>>>>>> Stashed changes
   流浪者: { hp: 0, atk: 80, def: 0, cpct: 100, cdmg: 100, mastery: 0, dmg: 100, phy: 0, recharge: 35, heal: 0 },
   珐露珊: { hp: 0, atk: 75, def: 0, cpct: 100, cdmg: 100, mastery: 0, dmg: 100, phy: 0, recharge: 100, heal: 0 },
   瑶瑶: { hp: 100, atk: 75, def: 0, cpct: 30, cdmg: 30, mastery: 75, dmg: 100, phy: 0, recharge: 75, heal: 100 },
